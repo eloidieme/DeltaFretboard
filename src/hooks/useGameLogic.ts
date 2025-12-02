@@ -49,7 +49,8 @@ export function useGameLogic() {
 
   const { playTickSound, getAudioContext, playSuccessSound } = useAudio();
   const { speakChallenge, cancelSpeech } = useSpeech();
-  const { detectedNote, isStable, noteName } = useGuitarInput(settings.inputMode);
+  // Only enable guitar input if inputMode is on AND we are in single note mode
+  const { detectedNote, isStable, noteName } = useGuitarInput(settings.inputMode && settings.gameMode === "single");
 
   // Persist settings
   useEffect(() => {

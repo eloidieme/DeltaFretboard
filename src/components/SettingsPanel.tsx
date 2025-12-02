@@ -24,7 +24,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <button
             key={m}
             onClick={() => {
-              setSettings((s) => ({ ...s, gameMode: m }));
+              setSettings((s) => ({ 
+                ...s, 
+                gameMode: m,
+                // Disable input mode if switching to chords/triads
+                inputMode: m === "single" ? s.inputMode : false 
+              }));
               onGameModeChange?.(m);
             }}
             className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-lg border transition-all 
@@ -83,23 +88,37 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
       {/* Toggle Audio Input */}
       <div
-        className="col-span-2 flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
-        onClick={() =>
-          setSettings((s) => ({ ...s, inputMode: !s.inputMode }))
-        }
+        className={`col-span-2 flex items-center justify-between p-4 rounded-xl border transition-colors ${
+          settings.gameMode === "single"
+            ? "bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer"
+            : "bg-white/5 border-white/5 opacity-50 cursor-not-allowed"
+        }`}
+        onClick={() => {
+          if (settings.gameMode === "single") {
+            setSettings((s) => ({ ...s, inputMode: !s.inputMode }));
+          }
+        }}
       >
         <div className="flex flex-col">
           <span className="text-sm text-gray-300">Audio Input</span>
-          <span className="text-xs text-gray-500">Use microphone</span>
+          <span className="text-xs text-gray-500">
+            {settings.gameMode === "single"
+              ? "Use microphone"
+              : "Not available for chords"}
+          </span>
         </div>
         <div
           className={`w-10 h-6 rounded-full p-1 transition-colors ${
-            settings.inputMode ? "bg-green-500" : "bg-gray-600"
+            settings.inputMode && settings.gameMode === "single"
+              ? "bg-green-500"
+              : "bg-gray-600"
           }`}
         >
           <div
             className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-              settings.inputMode ? "translate-x-4" : "translate-x-0"
+              settings.inputMode && settings.gameMode === "single"
+                ? "translate-x-4"
+                : "translate-x-0"
             }`}
           />
         </div>
