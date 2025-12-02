@@ -11,6 +11,7 @@ import {
 } from "../constants";
 import { useAudio } from "./useAudio";
 import { useSpeech } from "./useSpeech";
+import { useGuitarInput } from "./useGuitarInput";
 
 const DEFAULT_SETTINGS: Settings = {
   duration: 3,
@@ -19,6 +20,7 @@ const DEFAULT_SETTINGS: Settings = {
   voiceEnabled: true,
   tickEnabled: true,
   stringMode: false,
+  inputMode: false,
 };
 
 export function useGameLogic() {
@@ -40,6 +42,7 @@ export function useGameLogic() {
 
   const { playTickSound, getAudioContext } = useAudio();
   const { speakChallenge, cancelSpeech } = useSpeech();
+  const { detectedNote, isStable, noteName } = useGuitarInput(settings.inputMode);
 
   // Persist settings
   useEffect(() => {
@@ -236,6 +239,31 @@ export function useGameLogic() {
     noteBag.current = [];
   }, [settings.mode]);
 
+  // Pitch Detection Logic
+  useEffect(() => {
+    if (
+      settings.inputMode &&
+      isStable &&
+      detectedNote &&
+      currentNote !== "🎸" &&
+      currentNote !== "⏸"
+    ) {
+      // Extract target note from currentNote string (e.g., "A Major" -> "A")
+      // We look for the first occurrence of a valid note
+      const match = currentNote.match(/([A-G][#b]?)/);
+      if (match) {
+        const target = match[0];
+        const val1 = NOTE_VALUES[target];
+        const val2 = NOTE_VALUES[detectedNote];
+
+        // Check if they are the same note (ignoring octave)
+        if (val1 !== undefined && val1 === val2) {
+          nextNote();
+        }
+      }
+    }
+  }, [detectedNote, isStable, settings.inputMode, currentNote, nextNote]);
+
   return {
     currentNote,
     currentString,
@@ -247,5 +275,6 @@ export function useGameLogic() {
     stopTraining,
     nextNote,
     sessionDuration,
+    detectedNote: noteName, // Expose display name (e.g. "A#/Bb") for UI
   };
 }

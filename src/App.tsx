@@ -17,6 +17,7 @@ function App() {
     setSettings,
     togglePlay,
     sessionDuration,
+    detectedNote,
   } = useGameLogic();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -81,6 +82,22 @@ function App() {
         />
         
         <ControlButtons isPlaying={isPlaying} onToggle={togglePlay} />
+
+        {settings.inputMode && (
+          <div className="mt-6 text-center animate-fade-in">
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Input</span>
+            <div className="text-xl font-bold text-green-400 h-8 flex items-center justify-center gap-2">
+              {detectedNote ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  {detectedNote}
+                </>
+              ) : (
+                <span className="text-gray-600 text-sm">Listening...</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <SettingsPanel settings={settings} setSettings={setSettings} />

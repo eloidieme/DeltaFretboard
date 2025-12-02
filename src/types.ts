@@ -8,4 +8,5 @@ export interface Settings {
   voiceEnabled: boolean;
   tickEnabled: boolean;
   stringMode: boolean;
+  inputMode: boolean;
 }

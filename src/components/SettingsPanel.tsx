@@ -81,6 +81,30 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
       </div>
 
+      {/* Toggle Audio Input */}
+      <div
+        className="col-span-2 flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors cursor-pointer"
+        onClick={() =>
+          setSettings((s) => ({ ...s, inputMode: !s.inputMode }))
+        }
+      >
+        <div className="flex flex-col">
+          <span className="text-sm text-gray-300">Audio Input</span>
+          <span className="text-xs text-gray-500">Use microphone</span>
+        </div>
+        <div
+          className={`w-10 h-6 rounded-full p-1 transition-colors ${
+            settings.inputMode ? "bg-green-500" : "bg-gray-600"
+          }`}
+        >
+          <div
+            className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+              settings.inputMode ? "translate-x-4" : "translate-x-0"
+            }`}
+          />
+        </div>
+      </div>
+
       {/* Toggle String Mode - Only visible in Single Mode */}
       {settings.gameMode === "single" && (
         <div
