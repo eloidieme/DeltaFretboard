@@ -35,6 +35,7 @@ export function useGameLogic() {
   const timerRef = useRef<number | null>(null);
   const sessionTimerRef = useRef<number | null>(null);
   const noteBag = useRef<string[]>([]);
+  const stringBag = useRef<string[]>([]);
   const lastStringRef = useRef<string | null>(null);
 
   const { playTickSound, getAudioContext } = useAudio();
@@ -127,10 +128,30 @@ export function useGameLogic() {
   }, [settings.mode, settings.gameMode, currentNote]);
 
   const getRandomString = useCallback(() => {
-    let newString = STRINGS[Math.floor(Math.random() * STRINGS.length)];
-    if (newString === lastStringRef.current) {
-      newString = STRINGS[Math.floor(Math.random() * STRINGS.length)];
+    // Refill bag if empty
+    if (stringBag.current.length === 0) {
+      const newBag = [...STRINGS];
+      // Shuffle
+      for (let i = newBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newBag[i], newBag[j]] = [newBag[j], newBag[i]];
+      }
+      // Ensure we don't repeat the very last string immediately if possible
+      if (
+        lastStringRef.current &&
+        newBag[0] === lastStringRef.current &&
+        newBag.length > 1
+      ) {
+        // Swap first with last
+        [newBag[0], newBag[newBag.length - 1]] = [
+          newBag[newBag.length - 1],
+          newBag[0],
+        ];
+      }
+      stringBag.current = newBag;
     }
+
+    const newString = stringBag.current.shift() as string;
     lastStringRef.current = newString;
     return newString;
   }, []);

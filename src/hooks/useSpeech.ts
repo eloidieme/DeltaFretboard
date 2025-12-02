@@ -38,7 +38,9 @@ export function useSpeech() {
 
       let fullText = textToSpeak;
       if (stringName) {
-        fullText += `, on ${stringName} string`;
+        // Fix "A" string pronunciation
+        const spokenString = stringName === "A" ? "Eigh" : stringName;
+        fullText += `, on ${spokenString} string`;
       }
 
       const utterance = new SpeechSynthesisUtterance(fullText);
