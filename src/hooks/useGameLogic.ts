@@ -22,18 +22,42 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 export function useGameLogic() {
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<Settings>(() => {
+    const saved = localStorage.getItem("delta-fretboard-settings");
+    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+  });
   const [currentNote, setCurrentNote] = useState<string>("🎸");
   const [currentString, setCurrentString] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [sessionDuration, setSessionDuration] = useState<number>(0);
 
   const timerRef = useRef<number | null>(null);
+  const sessionTimerRef = useRef<number | null>(null);
   const noteBag = useRef<string[]>([]);
   const lastStringRef = useRef<string | null>(null);
 
   const { playTickSound, getAudioContext } = useAudio();
   const { speakChallenge, cancelSpeech } = useSpeech();
+
+  // Persist settings
+  useEffect(() => {
+    localStorage.setItem("delta-fretboard-settings", JSON.stringify(settings));
+  }, [settings]);
+
+  // Session Timer
+  useEffect(() => {
+    if (isPlaying) {
+      sessionTimerRef.current = window.setInterval(() => {
+        setSessionDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+    }
+    return () => {
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+    };
+  }, [isPlaying]);
 
   const getSmartNote = useCallback(() => {
     // 1. Pick a root note (using existing logic)
@@ -201,5 +225,6 @@ export function useGameLogic() {
     togglePlay,
     stopTraining,
     nextNote,
+    sessionDuration,
   };
 }
