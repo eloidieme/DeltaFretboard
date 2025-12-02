@@ -13,20 +13,20 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     <div className="absolute top-4 right-4 cursor-pointer" onClick={onToggle}>
       {isPlaying ? (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-green-300 font-bold uppercase tracking-wider">
+          <span className="text-xs text-green-300 font-bold uppercase tracking-wider text-glow">
             Live
           </span>
           <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]"></span>
           </span>
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-red-400 font-bold uppercase tracking-wider">
+          <span className="text-xs text-red-400 font-bold uppercase tracking-wider text-glow">
             Paused
           </span>
-          <div className="h-3 w-3 rounded-full bg-red-500/50"></div>
+          <div className="h-3 w-3 rounded-full bg-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.4)]"></div>
         </div>
       )}
     </div>

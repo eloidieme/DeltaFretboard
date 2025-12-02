@@ -12,14 +12,16 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
   return (
     <button
       onClick={onToggle}
-      className={`w-full py-4 text-lg font-semibold tracking-wide text-white transition-all transform rounded-xl hover:scale-[1.02] active:scale-95 shadow-lg
+      className={`w-full py-4 text-lg font-semibold tracking-wide text-white transition-all transform rounded-xl glass-button
         ${
           isPlaying
-            ? "bg-gradient-to-r from-red-500 to-pink-600 hover:shadow-red-500/20"
-            : "bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-blue-500/20"
+            ? "border-red-500/30 hover:border-red-500/60 text-red-100"
+            : "border-cyan-500/30 hover:border-cyan-500/60 text-cyan-100"
         }`}
     >
-      {isPlaying ? "Stop (Space)" : "Start Training"}
+      <span className={isPlaying ? "text-red-300 text-glow" : "neon-cyan"}>
+        {isPlaying ? "Stop (Space)" : "Start Training"}
+      </span>
     </button>
   );
 };
