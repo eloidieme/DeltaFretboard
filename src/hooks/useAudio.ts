@@ -38,5 +38,36 @@ export function useAudio() {
     [getAudioContext]
   );
 
-  return { getAudioContext, playTickSound };
+  const playSuccessSound = useCallback(() => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+    
+    // Create a pleasant chord (C Major)
+    const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+    
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, t);
+      
+      // Stagger start slightly
+      const start = t + i * 0.05;
+      
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.1, start + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.4);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(start);
+      osc.stop(start + 0.5);
+    });
+  }, [getAudioContext]);
+
+  return { getAudioContext, playTickSound, playSuccessSound };
 }

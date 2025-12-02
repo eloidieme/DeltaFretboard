@@ -40,7 +40,7 @@ export function useGameLogic() {
   const stringBag = useRef<string[]>([]);
   const lastStringRef = useRef<string | null>(null);
 
-  const { playTickSound, getAudioContext } = useAudio();
+  const { playTickSound, getAudioContext, playSuccessSound } = useAudio();
   const { speakChallenge, cancelSpeech } = useSpeech();
   const { detectedNote, isStable, noteName } = useGuitarInput(settings.inputMode);
 
@@ -258,6 +258,7 @@ export function useGameLogic() {
 
         // Check if they are the same note (ignoring octave)
         if (val1 !== undefined && val1 === val2) {
+          playSuccessSound();
           nextNote();
         }
       }
