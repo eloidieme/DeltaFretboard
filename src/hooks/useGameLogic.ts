@@ -38,12 +38,14 @@ export function useGameLogic() {
   const [reactionTimes, setReactionTimes] = useState<number[]>([]);
   const [startTime, setStartTime] = useState<number>(0);
   const [totalAttempts, setTotalAttempts] = useState<number>(0);
+  const [noteStats, setNoteStats] = useState<Record<string, { correct: number; mistakes: number; totalTime: number }>>({});
 
   const timerRef = useRef<number | null>(null);
   const sessionTimerRef = useRef<number | null>(null);
   const noteBag = useRef<string[]>([]);
   const stringBag = useRef<string[]>([]);
   const lastStringRef = useRef<string | null>(null);
+  const mistakeCooldownRef = useRef<number>(0);
 
   const { playTickSound, getAudioContext, playSuccessSound } = useAudio();
   const { speakChallenge, cancelSpeech } = useSpeech();
@@ -164,7 +166,7 @@ export function useGameLogic() {
     return newString;
   }, []);
 
-  const nextNote = useCallback(() => {
+  const nextNote = useCallback((isStart: boolean = false) => {
     const note = getSmartNote();
     setCurrentNote(note);
 
@@ -177,7 +179,9 @@ export function useGameLogic() {
     setTimeLeft(settings.duration * 10);
     
     setStartTime(Date.now());
-    setTotalAttempts(prev => prev + 1);
+    if (!isStart) {
+      setTotalAttempts(prev => prev + 1);
+    }
 
     if (settings.voiceEnabled) speakChallenge(note, str);
   }, [
@@ -207,7 +211,8 @@ export function useGameLogic() {
     // Reset stats on new session start
     setReactionTimes([]);
     setTotalAttempts(0);
-    nextNote();
+    setNoteStats({});
+    nextNote(true);
   }, [getAudioContext, nextNote]);
 
   const togglePlay = useCallback(() => {
@@ -263,23 +268,54 @@ export function useGameLogic() {
       currentNote !== "⏸"
     ) {
       // Extract target note from currentNote string (e.g., "A Major" -> "A")
-      // We look for the first occurrence of a valid note
       const match = currentNote.match(/([A-G][#b]?)/);
       if (match) {
         const target = match[0];
         const val1 = NOTE_VALUES[target];
         const val2 = NOTE_VALUES[detectedNote];
 
-        // Check if they are the same note (ignoring octave)
-        if (val1 !== undefined && val1 === val2) {
-          const reactionTime = Date.now() - startTime;
-          setReactionTimes(prev => [...prev, reactionTime]);
-          playSuccessSound();
-          nextNote();
+        if (val1 !== undefined) {
+          // Success
+          if (val1 === val2) {
+            const reactionTime = Date.now() - startTime;
+            setReactionTimes(prev => [...prev, reactionTime]);
+            
+            setNoteStats(prev => {
+              const stats = prev[target] || { correct: 0, mistakes: 0, totalTime: 0 };
+              return {
+                ...prev,
+                [target]: {
+                  ...stats,
+                  correct: stats.correct + 1,
+                  totalTime: stats.totalTime + reactionTime,
+                }
+              };
+            });
+
+            playSuccessSound();
+            nextNote();
+          } 
+          // Mistake (Wrong note stable)
+          else {
+            const now = Date.now();
+            if (now - mistakeCooldownRef.current > 1000) { // 1s cooldown for mistakes
+              mistakeCooldownRef.current = now;
+              setNoteStats(prev => {
+                const stats = prev[target] || { correct: 0, mistakes: 0, totalTime: 0 };
+                return {
+                  ...prev,
+                  [target]: {
+                    ...stats,
+                    mistakes: stats.mistakes + 1,
+                  }
+                };
+              });
+            }
+          }
         }
       }
     }
-  }, [detectedNote, isStable, settings.inputMode, currentNote, nextNote]);
+  }, [detectedNote, isStable, settings.inputMode, currentNote, nextNote, startTime, playSuccessSound]);
 
   return {
     currentNote,
@@ -296,6 +332,7 @@ export function useGameLogic() {
     stats: {
       reactionTimes,
       totalAttempts,
+      noteStats,
     }
   };
 }

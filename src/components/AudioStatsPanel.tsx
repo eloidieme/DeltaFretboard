@@ -1,14 +1,13 @@
-import React from "react";
-
 interface AudioStatsPanelProps {
   stats: {
     reactionTimes: number[];
     totalAttempts: number;
+    noteStats: Record<string, { correct: number; mistakes: number; totalTime: number }>;
   };
 }
 
 export const AudioStatsPanel: React.FC<AudioStatsPanelProps> = ({ stats }) => {
-  const { reactionTimes, totalAttempts } = stats;
+  const { reactionTimes, totalAttempts, noteStats } = stats;
   
   const correctCount = reactionTimes.length;
   const averageTime =
@@ -20,6 +19,33 @@ export const AudioStatsPanel: React.FC<AudioStatsPanelProps> = ({ stats }) => {
   
   const fastestTime =
     reactionTimes.length > 0 ? Math.min(...reactionTimes) : 0;
+
+  // Calculate detailed stats
+  let mostFailedNote = "-";
+  let maxMistakes = 0;
+  let slowestNote = "-";
+  let maxAvgTime = 0;
+  let fastestNote = "-";
+  let minAvgTime = Infinity;
+
+  Object.entries(noteStats).forEach(([note, data]) => {
+    if (data.mistakes > maxMistakes) {
+      maxMistakes = data.mistakes;
+      mostFailedNote = note;
+    }
+    
+    if (data.correct > 0) {
+      const avg = data.totalTime / data.correct;
+      if (avg > maxAvgTime) {
+        maxAvgTime = avg;
+        slowestNote = note;
+      }
+      if (avg < minAvgTime) {
+        minAvgTime = avg;
+        fastestNote = note;
+      }
+    }
+  });
 
   // Get last 20 reaction times for graph
   const graphData = reactionTimes.slice(-20);
@@ -43,6 +69,24 @@ export const AudioStatsPanel: React.FC<AudioStatsPanelProps> = ({ stats }) => {
           <div className="text-xs text-gray-500 mb-1">Fastest</div>
           <div className="text-xl font-bold text-green-400">
             {fastestTime > 0 ? `${(fastestTime / 1000).toFixed(2)}s` : "-"}
+            <div className="bg-black/20 p-3 rounded-lg">
+          <div className="text-xs text-gray-500 mb-1">Fastest Note</div>
+          <div className="text-xl font-bold text-cyan-400">
+            {fastestNote}
+          </div>
+        </div>
+      </div>
+        </div>
+        <div className="bg-black/20 p-3 rounded-lg">
+          <div className="text-xs text-gray-500 mb-1">Most Failed</div>
+          <div className="text-xl font-bold text-red-400">
+            {mostFailedNote} <span className="text-xs text-gray-500 font-normal">({maxMistakes})</span>
+          </div>
+        </div>
+        <div className="bg-black/20 p-3 rounded-lg">
+          <div className="text-xs text-gray-500 mb-1">Slowest Note</div>
+          <div className="text-xl font-bold text-yellow-400">
+            {slowestNote}
           </div>
         </div>
       </div>
