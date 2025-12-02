@@ -33,6 +33,11 @@ export function useGameLogic() {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [sessionDuration, setSessionDuration] = useState<number>(0);
+  
+  // Stats
+  const [reactionTimes, setReactionTimes] = useState<number[]>([]);
+  const [startTime, setStartTime] = useState<number>(0);
+  const [totalAttempts, setTotalAttempts] = useState<number>(0);
 
   const timerRef = useRef<number | null>(null);
   const sessionTimerRef = useRef<number | null>(null);
@@ -170,6 +175,9 @@ export function useGameLogic() {
     setCurrentString(str);
 
     setTimeLeft(settings.duration * 10);
+    
+    setStartTime(Date.now());
+    setTotalAttempts(prev => prev + 1);
 
     if (settings.voiceEnabled) speakChallenge(note, str);
   }, [
@@ -188,11 +196,17 @@ export function useGameLogic() {
     setCurrentNote("⏸");
     setCurrentString(null);
     cancelSpeech();
+    // Optional: Reset stats on stop? Or keep them for the session summary?
+    // Let's keep them until manual reset or page reload for now, 
+    // but maybe we want to reset on start?
   }, [settings.duration, cancelSpeech]);
 
   const startTraining = useCallback(() => {
     getAudioContext();
     setIsPlaying(true);
+    // Reset stats on new session start
+    setReactionTimes([]);
+    setTotalAttempts(0);
     nextNote();
   }, [getAudioContext, nextNote]);
 
@@ -258,6 +272,8 @@ export function useGameLogic() {
 
         // Check if they are the same note (ignoring octave)
         if (val1 !== undefined && val1 === val2) {
+          const reactionTime = Date.now() - startTime;
+          setReactionTimes(prev => [...prev, reactionTime]);
           playSuccessSound();
           nextNote();
         }
@@ -277,5 +293,9 @@ export function useGameLogic() {
     nextNote,
     sessionDuration,
     detectedNote: noteName, // Expose display name (e.g. "A#/Bb") for UI
+    stats: {
+      reactionTimes,
+      totalAttempts,
+    }
   };
 }
