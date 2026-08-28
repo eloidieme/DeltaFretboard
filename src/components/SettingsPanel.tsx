@@ -1,5 +1,5 @@
 import React from "react";
-import type { Settings, NoteMode, GameMode } from "../types";
+import type { Settings, NoteMode, GameMode, SessionMode } from "../types";
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -42,6 +42,81 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             {m}
           </button>
         ))}
+      </div>
+
+      {/* Session Mode Selector */}
+      <div className="col-span-2 p-4 rounded-xl bg-white/5 border border-white/10">
+        <span className="block text-sm text-gray-300 mb-3">Session Mode</span>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              ["free", "Free"],
+              ["fixed-count", "Fixed Number"],
+              ["fixed-time", "Fixed Time"],
+            ] as [SessionMode, string][]
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() =>
+                setSettings((s) => ({ ...s, sessionMode: mode }))
+              }
+              className={`py-3 px-2 text-[10px] font-bold uppercase tracking-wider rounded-lg border transition-all ${
+                settings.sessionMode === mode
+                  ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-100"
+                  : "bg-transparent border-white/5 text-gray-500 hover:bg-white/5 hover:text-gray-300"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {settings.sessionMode === "fixed-count" && (
+          <label className="flex items-center justify-between gap-4 mt-4 text-sm text-gray-300">
+            <span>Number of prompts</span>
+            <input
+              type="number"
+              min="1"
+              max="200"
+              value={settings.fixedCount}
+              onChange={(event) =>
+                setSettings((s) => ({
+                  ...s,
+                  fixedCount: Math.min(
+                    200,
+                    Math.max(1, Number(event.target.value) || 1)
+                  ),
+                }))
+              }
+              className="w-24 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-right text-white outline-none focus:border-cyan-500/50"
+            />
+          </label>
+        )}
+
+        {settings.sessionMode === "fixed-time" && (
+          <label className="flex items-center justify-between gap-4 mt-4 text-sm text-gray-300">
+            <span>Session duration</span>
+            <span className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                max="120"
+                value={settings.fixedTimeMinutes}
+                onChange={(event) =>
+                  setSettings((s) => ({
+                    ...s,
+                    fixedTimeMinutes: Math.min(
+                      120,
+                      Math.max(1, Number(event.target.value) || 1)
+                    ),
+                  }))
+                }
+                className="w-24 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-right text-white outline-none focus:border-cyan-500/50"
+              />
+              <span className="text-xs text-gray-500">min</span>
+            </span>
+          </label>
+        )}
       </div>
 
       {/* Toggle Voice */}
@@ -157,7 +232,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       {/* Duration Slider */}
       <div className="col-span-2 p-4 rounded-xl bg-white/5 border border-white/10">
         <div className="flex justify-between mb-3">
-          <span className="text-sm text-gray-300">Timer</span>
+          <span className="text-sm text-gray-300">Prompt Timer</span>
           <span className="text-sm font-bold text-blue-300">
             {settings.duration}s
           </span>

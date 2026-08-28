@@ -1,5 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import type { Settings } from "../types";
+import type { Dispatch, SetStateAction } from "react";
+import type {
+  AttemptResult,
+  Settings,
+  TimelinePlayedNote,
+  TrainingStats,
+} from "../types";
 import {
   SHARPS,
   FLATS,
@@ -17,62 +23,79 @@ const DEFAULT_SETTINGS: Settings = {
   duration: 3,
   mode: "mixed",
   gameMode: "single",
+  sessionMode: "free",
+  fixedCount: 24,
+  fixedTimeMinutes: 5,
   voiceEnabled: true,
   tickEnabled: true,
   stringMode: false,
   inputMode: false,
 };
 
-export function useGameLogic() {
-  const [settings, setSettings] = useState<Settings>(() => {
+const loadSettings = (): Settings => {
+  try {
     const saved = localStorage.getItem("delta-fretboard-settings");
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
-  });
+    return saved
+      ? { ...DEFAULT_SETTINGS, ...(JSON.parse(saved) as Partial<Settings>) }
+      : DEFAULT_SETTINGS;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+};
+
+export function useGameLogic() {
+  const [settings, setSettingsState] = useState<Settings>(loadSettings);
   const [currentNote, setCurrentNote] = useState<string>("🎸");
   const [currentString, setCurrentString] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [timeLeft, setTimeLeft] = useState<number>(
+    DEFAULT_SETTINGS.duration * 10
+  );
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [sessionDuration, setSessionDuration] = useState<number>(0);
-  
-  // Stats
+  const [completedAttempts, setCompletedAttempts] = useState<number>(0);
+  const [sessionEndReason, setSessionEndReason] = useState<string | null>(null);
+
   const [reactionTimes, setReactionTimes] = useState<number[]>([]);
-  const [startTime, setStartTime] = useState<number>(0);
   const [totalAttempts, setTotalAttempts] = useState<number>(0);
-  const [noteStats, setNoteStats] = useState<Record<string, { correct: number; mistakes: number; totalTime: number }>>({});
+  const [noteStats, setNoteStats] = useState<
+    Record<string, { correct: number; mistakes: number; totalTime: number }>
+  >({});
+  const [timeline, setTimeline] = useState<TrainingStats["timeline"]>([]);
 
   const timerRef = useRef<number | null>(null);
   const sessionTimerRef = useRef<number | null>(null);
+  const fixedTimeTimerRef = useRef<number | null>(null);
   const noteBag = useRef<string[]>([]);
   const stringBag = useRef<string[]>([]);
   const lastStringRef = useRef<string | null>(null);
   const mistakeCooldownRef = useRef<number>(0);
+  const sessionStartRef = useRef<number>(0);
+  const promptStartRef = useRef<number>(0);
+  const currentAttemptIdRef = useRef<number | null>(null);
+  const nextAttemptIdRef = useRef<number>(1);
+  const completedAttemptsRef = useRef<number>(0);
+  const lastLoggedNoteRef = useRef<string | null>(null);
+  const ignoreInputUntilRef = useRef<number>(0);
 
   const { playTickSound, getAudioContext, playSuccessSound } = useAudio();
   const { speakChallenge, cancelSpeech } = useSpeech();
-  // Only enable guitar input if inputMode is on AND we are in single note mode
-  const { detectedNote, isStable, noteName } = useGuitarInput(settings.inputMode && settings.gameMode === "single");
+  const { detectedNote, isStable, noteName } = useGuitarInput(
+    settings.inputMode && settings.gameMode === "single"
+  );
 
-  // Persist settings
   useEffect(() => {
     localStorage.setItem("delta-fretboard-settings", JSON.stringify(settings));
   }, [settings]);
 
-  // Session Timer
-  useEffect(() => {
-    if (isPlaying) {
-      sessionTimerRef.current = window.setInterval(() => {
-        setSessionDuration((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
-    }
-    return () => {
-      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
-    };
-  }, [isPlaying]);
+  const setSettings = useCallback<Dispatch<SetStateAction<Settings>>>((nextSettings) => {
+    setSessionEndReason(null);
+    setSessionDuration(0);
+    setCompletedAttempts(0);
+    completedAttemptsRef.current = 0;
+    setSettingsState(nextSettings);
+  }, []);
 
   const getSmartNote = useCallback(() => {
-    // 1. Pick a root note (using existing logic)
     let pool: string[] = [];
     if (settings.mode === "sharp") pool = SHARPS;
     else if (settings.mode === "flat") pool = FLATS;
@@ -80,80 +103,66 @@ export function useGameLogic() {
 
     if (noteBag.current.length === 0 || !pool.includes(noteBag.current[0])) {
       const newBag = [...pool];
-      for (let i = newBag.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [newBag[i], newBag[j]] = [newBag[j], newBag[i]];
+      for (let index = newBag.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [newBag[index], newBag[randomIndex]] = [
+          newBag[randomIndex],
+          newBag[index],
+        ];
       }
       noteBag.current = newBag;
     }
 
     let candidate = noteBag.current.pop() as string;
-
-    // Smart distance check (only for single notes, or base note of chords)
-    // We can keep this logic for the root note selection
     if (
+      settings.gameMode === "single" &&
       currentNote !== "🎸" &&
       currentNote !== "⏸" &&
       noteBag.current.length > 0
     ) {
-      // Extract root note from current display if possible, or just skip smart logic if complex
-      // For simplicity, let's just apply smart logic to the candidate root note
-      // assuming currentNote might be complex.
-      // If currentNote is complex, we might not easily get the previous root.
-      // So let's just skip the distance check if we are not in single mode OR
-      // if we can't easily parse the root.
-      // Actually, let's just keep it simple:
-      // If we are in single mode, we do the distance check.
-      if (settings.gameMode === "single") {
-        const val1 = NOTE_VALUES[currentNote] ?? -10;
-        const val2 = NOTE_VALUES[candidate];
-        const diff = Math.abs(val1 - val2);
-        const distance = Math.min(diff, 12 - diff);
-
-        if (distance <= 1) {
-          noteBag.current.unshift(candidate);
-          candidate = noteBag.current.pop() as string;
-        }
+      const previousValue = NOTE_VALUES[currentNote] ?? -10;
+      const candidateValue = NOTE_VALUES[candidate];
+      const difference = Math.abs(previousValue - candidateValue);
+      const distance = Math.min(difference, 12 - difference);
+      if (distance <= 1) {
+        noteBag.current.unshift(candidate);
+        candidate = noteBag.current.pop() as string;
       }
     }
 
-    // 2. Format based on Game Mode
     if (settings.gameMode === "chords") {
       const quality =
         CHORD_QUALITIES[Math.floor(Math.random() * CHORD_QUALITIES.length)];
       return `${candidate} ${quality}`;
-    } else if (settings.gameMode === "triads") {
+    }
+    if (settings.gameMode === "triads") {
       const quality =
         TRIAD_QUALITIES[Math.floor(Math.random() * TRIAD_QUALITIES.length)];
       const inversion =
-        INVERSIONS[Math.floor(Math.random() * INVERSIONS.length)];
-      // Shorten for display
-      const shortInv = inversion
-        .replace("Root Position", "Root Pos.")
-        .replace("1st Inversion", "1st Inv.")
-        .replace("2nd Inversion", "2nd Inv.");
-      return `${shortInv} ${candidate} ${quality}`;
+        INVERSIONS[Math.floor(Math.random() * INVERSIONS.length)]
+          .replace("Root Position", "Root Pos.")
+          .replace("1st Inversion", "1st Inv.")
+          .replace("2nd Inversion", "2nd Inv.");
+      return `${inversion} ${candidate} ${quality}`;
     }
-
     return candidate;
   }, [settings.mode, settings.gameMode, currentNote]);
 
   const getRandomString = useCallback(() => {
-    // Refill bag if empty
     if (stringBag.current.length === 0) {
       const newBag = [...STRINGS];
-      // Shuffle
-      for (let i = newBag.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [newBag[i], newBag[j]] = [newBag[j], newBag[i]];
+      for (let index = newBag.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [newBag[index], newBag[randomIndex]] = [
+          newBag[randomIndex],
+          newBag[index],
+        ];
       }
-      // Ensure we don't repeat the very last string immediately if possible
       if (
         lastStringRef.current &&
         newBag[0] === lastStringRef.current &&
         newBag.length > 1
       ) {
-        // Swap first with last
         [newBag[0], newBag[newBag.length - 1]] = [
           newBag[newBag.length - 1],
           newBag[0],
@@ -162,161 +171,281 @@ export function useGameLogic() {
       stringBag.current = newBag;
     }
 
-    const newString = stringBag.current.shift() as string;
-    lastStringRef.current = newString;
-    return newString;
+    const nextString = stringBag.current.shift() as string;
+    lastStringRef.current = nextString;
+    return nextString;
   }, []);
 
-  const nextNote = useCallback((isStart: boolean = false) => {
+  const startPrompt = useCallback(() => {
     const note = getSmartNote();
-    setCurrentNote(note);
-
-    const str =
+    const targetString =
       settings.stringMode && settings.gameMode === "single"
         ? getRandomString()
         : null;
-    setCurrentString(str);
+    const now = Date.now();
+    const attemptId = nextAttemptIdRef.current;
+    nextAttemptIdRef.current += 1;
+    currentAttemptIdRef.current = attemptId;
+    promptStartRef.current = now;
+    ignoreInputUntilRef.current = now + 250;
+    lastLoggedNoteRef.current = null;
 
+    setCurrentNote(note);
+    setCurrentString(targetString);
     setTimeLeft(settings.duration * 10);
-    
-    setStartTime(Date.now());
-    if (!isStart) {
-      setTotalAttempts(prev => prev + 1);
-    }
+    setTimeline((previous) => [
+      ...previous,
+      {
+        id: attemptId,
+        startedAtMs: Math.max(0, now - sessionStartRef.current),
+        target: note,
+        targetString,
+        playedNotes: [],
+        result: "pending",
+      },
+    ]);
 
-    if (settings.voiceEnabled) speakChallenge(note, str);
+    if (settings.voiceEnabled) speakChallenge(note, targetString);
   }, [
-    getSmartNote,
     getRandomString,
+    getSmartNote,
     settings.duration,
-    settings.voiceEnabled,
+    settings.gameMode,
     settings.stringMode,
+    settings.voiceEnabled,
     speakChallenge,
   ]);
 
-  const stopTraining = useCallback(() => {
-    setIsPlaying(false);
-    setTimeLeft(settings.duration * 10);
-    if (timerRef.current) clearInterval(timerRef.current);
-    setCurrentNote("⏸");
-    setCurrentString(null);
-    cancelSpeech();
-    // Optional: Reset stats on stop? Or keep them for the session summary?
-    // Let's keep them until manual reset or page reload for now, 
-    // but maybe we want to reset on start?
-  }, [settings.duration, cancelSpeech]);
+  const finishCurrentAttempt = useCallback(
+    (result: AttemptResult, reactionTimeMs?: number) => {
+      const attemptId = currentAttemptIdRef.current;
+      if (attemptId === null) return;
+      setTimeline((previous) =>
+        previous.map((attempt) =>
+          attempt.id === attemptId
+            ? { ...attempt, result, reactionTimeMs }
+            : attempt
+        )
+      );
+      currentAttemptIdRef.current = null;
+    },
+    []
+  );
+
+  const stopSession = useCallback(
+    (reason: string, finishPending: boolean) => {
+      if (finishPending) finishCurrentAttempt("stopped");
+      setIsPlaying(false);
+      setTimeLeft(settings.duration * 10);
+      setCurrentNote("⏸");
+      setCurrentString(null);
+      setSessionEndReason(reason);
+      cancelSpeech();
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+      if (fixedTimeTimerRef.current) clearTimeout(fixedTimeTimerRef.current);
+    },
+    [cancelSpeech, finishCurrentAttempt, settings.duration]
+  );
+
+  const completeAndAdvance = useCallback(
+    (
+      result: Exclude<AttemptResult, "pending" | "stopped">,
+      reactionTimeMs?: number
+    ) => {
+      finishCurrentAttempt(result, reactionTimeMs);
+      const completed = completedAttemptsRef.current + 1;
+      completedAttemptsRef.current = completed;
+      setCompletedAttempts(completed);
+      setTotalAttempts((previous) => previous + 1);
+
+      if (
+        settings.sessionMode === "fixed-count" &&
+        completed >= settings.fixedCount
+      ) {
+        stopSession("Fixed number complete", false);
+        return;
+      }
+      startPrompt();
+    },
+    [
+      finishCurrentAttempt,
+      settings.fixedCount,
+      settings.sessionMode,
+      startPrompt,
+      stopSession,
+    ]
+  );
 
   const startTraining = useCallback(() => {
     getAudioContext();
-    setIsPlaying(true);
-    // Reset stats on new session start
+    sessionStartRef.current = Date.now();
+    completedAttemptsRef.current = 0;
+    nextAttemptIdRef.current = 1;
+    currentAttemptIdRef.current = null;
+    setSessionDuration(0);
+    setCompletedAttempts(0);
+    setSessionEndReason(null);
     setReactionTimes([]);
     setTotalAttempts(0);
     setNoteStats({});
-    nextNote(true);
-  }, [getAudioContext, nextNote]);
+    setTimeline([]);
+    setIsPlaying(true);
+    startPrompt();
+  }, [getAudioContext, startPrompt]);
+
+  const stopTraining = useCallback(() => {
+    stopSession("Stopped", true);
+  }, [stopSession]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) stopTraining();
     else startTraining();
-  }, [isPlaying, stopTraining, startTraining]);
+  }, [isPlaying, startTraining, stopTraining]);
 
   useEffect(() => {
-    if (isPlaying) {
-      timerRef.current = window.setInterval(() => {
-        setTimeLeft((prev) => {
-          const newValue = prev - 1;
-          if (settings.tickEnabled && newValue > 0 && newValue % 10 === 0) {
-            playTickSound(false);
-          }
-          if (newValue <= 0) {
-            if (settings.tickEnabled) playTickSound(true);
-            return 0;
-          }
-          return newValue;
-        });
-      }, 100);
-    }
+    if (!isPlaying) return;
+    timerRef.current = window.setInterval(() => {
+      setTimeLeft((previous) => {
+        const next = previous - 1;
+        if (settings.tickEnabled && next > 0 && next % 10 === 0) {
+          playTickSound(false);
+        }
+        if (next <= 0) {
+          if (settings.tickEnabled) playTickSound(true);
+          return 0;
+        }
+        return next;
+      });
+    }, 100);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isPlaying, settings.tickEnabled, playTickSound]);
+  }, [isPlaying, playTickSound, settings.tickEnabled]);
 
   useEffect(() => {
-    if (isPlaying && timeLeft === 0) {
-      const timeout = setTimeout(() => nextNote(), 200);
-      return () => clearTimeout(timeout);
-    }
-  }, [timeLeft, isPlaying, nextNote]);
+    if (!isPlaying || timeLeft !== 0) return;
+    const timeout = window.setTimeout(() => completeAndAdvance("timeout"), 200);
+    return () => window.clearTimeout(timeout);
+  }, [completeAndAdvance, isPlaying, timeLeft]);
 
   useEffect(() => {
-    if (!isPlaying) {
-      setTimeLeft(settings.duration * 10);
+    if (!isPlaying) return;
+    sessionTimerRef.current = window.setInterval(() => {
+      setSessionDuration((previous) => previous + 1);
+    }, 1000);
+    if (settings.sessionMode === "fixed-time") {
+      fixedTimeTimerRef.current = window.setTimeout(
+        () => stopSession("Fixed time complete", true),
+        settings.fixedTimeMinutes * 60 * 1000
+      );
     }
-  }, [settings.duration, isPlaying]);
+    return () => {
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+      if (fixedTimeTimerRef.current) clearTimeout(fixedTimeTimerRef.current);
+    };
+  }, [
+    isPlaying,
+    settings.fixedTimeMinutes,
+    settings.sessionMode,
+    stopSession,
+  ]);
 
   useEffect(() => {
     noteBag.current = [];
-  }, [settings.mode]);
+  }, [settings.mode, settings.gameMode]);
 
-  // Pitch Detection Logic
+  const recordPlayedNote = useCallback((playedNote: TimelinePlayedNote) => {
+    const attemptId = currentAttemptIdRef.current;
+    if (attemptId === null) return;
+    setTimeline((previous) =>
+      previous.map((attempt) =>
+        attempt.id === attemptId
+          ? { ...attempt, playedNotes: [...attempt.playedNotes, playedNote] }
+          : attempt
+      )
+    );
+  }, []);
+
   useEffect(() => {
     if (
-      settings.inputMode &&
-      isStable &&
-      detectedNote &&
-      currentNote !== "🎸" &&
-      currentNote !== "⏸"
+      !settings.inputMode ||
+      !isPlaying ||
+      !isStable ||
+      !detectedNote ||
+      Date.now() < ignoreInputUntilRef.current ||
+      currentNote === "🎸" ||
+      currentNote === "⏸"
     ) {
-      // Extract target note from currentNote string (e.g., "A Major" -> "A")
-      const match = currentNote.match(/([A-G][#b]?)/);
-      if (match) {
-        const target = match[0];
-        const val1 = NOTE_VALUES[target];
-        const val2 = NOTE_VALUES[detectedNote];
-
-        if (val1 !== undefined) {
-          // Success
-          if (val1 === val2) {
-            const reactionTime = Date.now() - startTime;
-            setReactionTimes(prev => [...prev, reactionTime]);
-            
-            setNoteStats(prev => {
-              const stats = prev[target] || { correct: 0, mistakes: 0, totalTime: 0 };
-              return {
-                ...prev,
-                [target]: {
-                  ...stats,
-                  correct: stats.correct + 1,
-                  totalTime: stats.totalTime + reactionTime,
-                }
-              };
-            });
-
-            playSuccessSound();
-            nextNote();
-          } 
-          // Mistake (Wrong note stable)
-          else {
-            const now = Date.now();
-            if (now - mistakeCooldownRef.current > 1000) { // 1s cooldown for mistakes
-              mistakeCooldownRef.current = now;
-              setNoteStats(prev => {
-                const stats = prev[target] || { correct: 0, mistakes: 0, totalTime: 0 };
-                return {
-                  ...prev,
-                  [target]: {
-                    ...stats,
-                    mistakes: stats.mistakes + 1,
-                  }
-                };
-              });
-            }
-          }
-        }
-      }
+      return;
     }
-  }, [detectedNote, isStable, settings.inputMode, currentNote, nextNote, startTime, playSuccessSound]);
+
+    const match = currentNote.match(/([A-G][#b]?)/);
+    if (!match) return;
+    const target = match[0];
+    const targetValue = NOTE_VALUES[target];
+    const playedValue = NOTE_VALUES[detectedNote];
+    if (targetValue === undefined || playedValue === undefined) return;
+
+    const now = Date.now();
+    const reactionTime = now - promptStartRef.current;
+    const isCorrect = targetValue === playedValue;
+
+    if (lastLoggedNoteRef.current !== detectedNote) {
+      recordPlayedNote({
+        note: detectedNote,
+        atMs: reactionTime,
+        correct: isCorrect,
+      });
+      lastLoggedNoteRef.current = detectedNote;
+    }
+
+    if (isCorrect) {
+      setReactionTimes((previous) => [...previous, reactionTime]);
+      setNoteStats((previous) => {
+        const stats = previous[target] || {
+          correct: 0,
+          mistakes: 0,
+          totalTime: 0,
+        };
+        return {
+          ...previous,
+          [target]: {
+            ...stats,
+            correct: stats.correct + 1,
+            totalTime: stats.totalTime + reactionTime,
+          },
+        };
+      });
+      playSuccessSound();
+      completeAndAdvance("correct", reactionTime);
+      return;
+    }
+
+    if (now - mistakeCooldownRef.current > 1000) {
+      mistakeCooldownRef.current = now;
+      setNoteStats((previous) => {
+        const stats = previous[target] || {
+          correct: 0,
+          mistakes: 0,
+          totalTime: 0,
+        };
+        return {
+          ...previous,
+          [target]: { ...stats, mistakes: stats.mistakes + 1 },
+        };
+      });
+    }
+  }, [
+    completeAndAdvance,
+    currentNote,
+    detectedNote,
+    isPlaying,
+    isStable,
+    playSuccessSound,
+    recordPlayedNote,
+    settings.inputMode,
+  ]);
 
   return {
     currentNote,
@@ -326,14 +455,15 @@ export function useGameLogic() {
     settings,
     setSettings,
     togglePlay,
-    stopTraining,
-    nextNote,
     sessionDuration,
-    detectedNote: noteName, // Expose display name (e.g. "A#/Bb") for UI
+    completedAttempts,
+    sessionEndReason,
+    detectedNote: noteName,
     stats: {
       reactionTimes,
       totalAttempts,
       noteStats,
-    }
+      timeline,
+    } satisfies TrainingStats,
   };
 }

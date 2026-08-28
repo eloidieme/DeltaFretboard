@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { YIN } from "pitchfinder";
 
+type SafariWindow = Window &
+  typeof globalThis & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
 export interface GuitarInputState {
   detectedNote: string | null;
   isStable: boolean;
@@ -56,6 +61,22 @@ export function useGuitarInput(enabled: boolean) {
   const historyRef = useRef<string[]>([]);
   const STABILITY_THRESHOLD = 5; // Number of consistent frames
 
+  const cleanup = useCallback(() => {
+    if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    if (sourceRef.current) sourceRef.current.disconnect();
+    if (analyserRef.current) analyserRef.current.disconnect();
+    if (audioContextRef.current) audioContextRef.current.close();
+    if (streamRef.current)
+      streamRef.current.getTracks().forEach((track) => track.stop());
+
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    sourceRef.current = null;
+    requestRef.current = null;
+    streamRef.current = null;
+    historyRef.current = [];
+  }, []);
+
   useEffect(() => {
     if (!enabled) {
       cleanup();
@@ -67,7 +88,10 @@ export function useGuitarInput(enabled: boolean) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
         
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextClass =
+          window.AudioContext || (window as SafariWindow).webkitAudioContext;
+        if (!AudioContextClass) throw new Error("Web Audio API unavailable");
+        const audioContext = new AudioContextClass();
         audioContextRef.current = audioContext;
         
         const analyser = audioContext.createAnalyser();
@@ -141,22 +165,7 @@ export function useGuitarInput(enabled: boolean) {
     startAudio();
 
     return cleanup;
-  }, [enabled]);
-
-  const cleanup = useCallback(() => {
-    if (requestRef.current) cancelAnimationFrame(requestRef.current);
-    if (sourceRef.current) sourceRef.current.disconnect();
-    if (analyserRef.current) analyserRef.current.disconnect();
-    if (audioContextRef.current) audioContextRef.current.close();
-    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-    
-    audioContextRef.current = null;
-    analyserRef.current = null;
-    sourceRef.current = null;
-    requestRef.current = null;
-    streamRef.current = null;
-    historyRef.current = [];
-  }, []);
+  }, [cleanup, enabled]);
 
   return inputState;
 }

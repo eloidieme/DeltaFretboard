@@ -1,13 +1,19 @@
 import { useRef, useCallback } from "react";
 
+type SafariWindow = Window &
+  typeof globalThis & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
 export function useAudio() {
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   const getAudioContext = useCallback(() => {
     if (!audioCtxRef.current) {
-      const AudioContext =
-        window.AudioContext || (window as any).webkitAudioContext;
-      audioCtxRef.current = new AudioContext();
+      const AudioContextClass =
+        window.AudioContext || (window as SafariWindow).webkitAudioContext;
+      if (!AudioContextClass) return null;
+      audioCtxRef.current = new AudioContextClass();
     }
     if (audioCtxRef.current.state === "suspended") {
       audioCtxRef.current.resume();

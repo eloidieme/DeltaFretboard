@@ -18,6 +18,8 @@ function App() {
     setSettings,
     togglePlay,
     sessionDuration,
+    completedAttempts,
+    sessionEndReason,
     detectedNote,
     stats,
   } = useGameLogic();
@@ -51,7 +53,14 @@ function App() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 select-none relative overflow-hidden">
-      <SessionStats duration={sessionDuration} />
+      <SessionStats
+        duration={sessionDuration}
+        sessionMode={settings.sessionMode}
+        fixedCount={settings.fixedCount}
+        fixedTimeMinutes={settings.fixedTimeMinutes}
+        completedAttempts={completedAttempts}
+        isPlaying={isPlaying}
+      />
       
       <button 
         onClick={toggleFullscreen}
@@ -87,6 +96,12 @@ function App() {
             />
             
             <ControlButtons isPlaying={isPlaying} onToggle={togglePlay} />
+
+            {!isPlaying && sessionEndReason && (
+              <div className="mt-3 text-center text-xs uppercase tracking-widest text-cyan-300">
+                {sessionEndReason}
+              </div>
+            )}
 
             {settings.inputMode && (
               <div className="mt-6 text-center animate-fade-in relative group">
